@@ -5,4 +5,5 @@ genome_so: genome.cpp
 	g++ -shared -Wl,-soname,libgenome.so -o libgenome.so  genome.o
 
 clean:
-	rm -f genome.o libgenome.so
+	rm -f genome.o libgenome.so p1.zip
+	rm -rf p1/ 
