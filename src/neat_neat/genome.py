@@ -12,9 +12,9 @@ else:
 class Genome:
     lib = ctypes.cdll.LoadLibrary('./libgenome.so')
 
-    # New Genome
-    lib.NewGenome.argtypes = [ctypes.c_char_p]
-    lib.NewGenome.restype = ctypes.c_void_p
+    # Init Genome
+    lib.InitGenome.argtypes = [ctypes.c_char_p]
+    lib.InitGenome.restype = ctypes.c_void_p
 
     # Delete Genome
     lib.DeleteGenome.argtypes = [ctypes.c_void_p]
@@ -24,9 +24,9 @@ class Genome:
     lib.CopyGenome.argtypes = [ctypes.c_void_p]
     lib.CopyGenome.restype = ctypes.c_void_p
 
-    # Init new genome
-    lib.InitGenome.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-    lib.InitGenome.restype = None
+    # Create genome
+    lib.CreateGenome.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    lib.CreateGenome.restype = None
 
     # Load Genome
     lib.LoadGenome.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
@@ -68,68 +68,61 @@ class Genome:
     lib.PrintGenomeInfo.argtypes = [ctypes.c_void_p]
     lib.PrintGenomeInfo.restype = None
 
-    @property
-    def name(self):
-        return self.get_name()
+    @staticmethod
+    def init_genome(name):
+        return Genome.lib.InitGenome(name.encode('utf-8'))
 
-    @property
-    def fitness(self):
-        return self.get_fitness()
+    @staticmethod
+    def delete_genome(genome):
+        Genome.lib.DeleteGenome(genome)
 
-    def __init__(self, name):
-        self.genome = self.lib.NewGenome(name.encode('utf-8'))
-        self.genome_initialized = False
+    @staticmethod
+    def copy(genome, name):
+        genome = Genome.lib.CopyGenome(genome)
+        # Genome.lib.SetName(genome, name.encode('utf-8'))
+        return genome
 
-    def __del__(self):
-        self.lib.DeleteGenome(self.genome)
+    @staticmethod
+    def create_genome(genome, num_inputs, num_outputs):
+        Genome.lib.CreateGenome(genome, num_inputs, num_outputs)
 
-    def copy(self):
-        if not self.genome_initialized:
-            raise Exception('Genome not initialized')
-        g = Genome("test string")
-        g.genome = self.lib.CopyGenome(self.genome)
-        g.genome_initialized = True
-        return g
+    @staticmethod
+    def load(genome, filename):
+        Genome.lib.LoadGenome(genome, filename.encode('utf-8'))
 
-    def new_genome(self, num_inputs, num_outputs):
-        self.lib.InitGenome(self.genome, num_inputs, num_outputs)
-        self.genome_initialized = True
+    @staticmethod
+    def save(genome, filename):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        Genome.lib.SaveGenome(genome, filename.encode('utf-8'))
 
-    def load(self, filename):
-        self.lib.LoadGenome(self.genome, filename.encode('utf-8'))
-        self.genome_initialized = True
+    @staticmethod
+    def mutate(genome):
+        Genome.lib.MutateGenome(genome)
 
-    def save(self, filename):
-        if not self.genome_initialized:
-            raise Exception('Genome not initialized')
-        self.lib.SaveGenome(self.genome, filename.encode('utf-8'))
+    @staticmethod
+    def crossover(genome, other):
+        Genome.lib.CrossoverGenome(genome, other)
 
-    def mutate(self):
-        if not self.genome_initialized:
-            raise Exception('Genome not initialized')
-        self.lib.MutateGenome(self.genome)
+    @staticmethod
+    def feed_forward(genome, inputs):
+        return Genome.lib.FeedForwardGenome(genome, inputs)
 
-    def crossover(self, other):
-        if not self.genome_initialized or not other.genome_initialized:
-            raise Exception('Genome not initialized')
-        self.lib.CrossoverGenome(self.genome, other.genome)
+    @staticmethod
+    def set_name(genome, name):
+        Genome.lib.SetName(genome, name.encode('utf-8'))
 
-    def feed_forward(self, inputs):
-        if not self.genome_initialized:
-            raise Exception('Genome not initialized')
-        return self.lib.FeedForwardGenome(self.genome, inputs)
+    @staticmethod
+    def get_name(genome):
+        return Genome.lib.GetName(genome).decode('utf-8')
 
-    def set_name(self, name):
-        self.lib.SetName(self.genome, name.encode('utf-8'))
+    @staticmethod
+    def set_fitness(genome, fitness):
+        Genome.lib.SetFitness(genome, fitness)
 
-    def get_name(self):
-        return self.lib.GetName(self.genome).decode('utf-8')
+    @staticmethod
+    def get_fitness(genome):
+        return Genome.lib.GetFitness(genome)
 
-    def set_fitness(self, fitness):
-        self.lib.SetFitness(self.genome, fitness)
-
-    def get_fitness(self):
-        return self.lib.GetFitness(self.genome)
-
-    def print_genome_info(self):
-        self.lib.PrintGenomeInfo(self.genome)
+    @staticmethod
+    def print_genome_info(genome):
+        Genome.lib.PrintGenomeInfo(genome)

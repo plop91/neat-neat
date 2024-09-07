@@ -6,4 +6,4 @@ genome_so: genome.cpp
 
 clean:
 	rm -f genome.o libgenome.so p1.zip
-	rm -rf p1/ 
+	rm -rf genomes/ 

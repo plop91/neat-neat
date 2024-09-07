@@ -4,7 +4,7 @@ An implementation of the NEAT algorithm in Python because I think NEAT is neat.
 
 ## TODO
 
-- [ ] Fix/Improve Saving and Loading of Networks
+- [x] Fix/Improve Saving and Loading of Networks
 - [ ] convert to be environment agnostic
 - [ ] add mario to examples
 - [ ] add more mutation methods
