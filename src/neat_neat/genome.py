@@ -68,61 +68,76 @@ class Genome:
     lib.PrintGenomeInfo.argtypes = [ctypes.c_void_p]
     lib.PrintGenomeInfo.restype = None
 
+    # DEBUG FUNCTIONS
+    lib.DoesGenomeHaveConnections.argtypes = [ctypes.c_void_p]
+    lib.DoesGenomeHaveConnections.restype = ctypes.c_bool
+
+    lib.PrintOutputLayerValues.argtypes = [ctypes.c_void_p]
+    lib.PrintOutputLayerValues.restype = None
+
     @staticmethod
-    def init_genome(name):
+    def init_genome(name: str) -> ctypes.c_void_p:
         return Genome.lib.InitGenome(name.encode('utf-8'))
 
     @staticmethod
-    def delete_genome(genome):
+    def delete_genome(genome: ctypes.c_void_p):
         Genome.lib.DeleteGenome(genome)
 
     @staticmethod
-    def copy(genome, name):
+    def copy(genome: ctypes.c_void_p, name: str) -> ctypes.c_void_p:
         genome = Genome.lib.CopyGenome(genome)
-        # Genome.lib.SetName(genome, name.encode('utf-8'))
+        Genome.lib.SetName(genome, name.encode('utf-8'))
         return genome
 
     @staticmethod
-    def create_genome(genome, num_inputs, num_outputs):
+    def create_genome(genome: ctypes.c_void_p, num_inputs: int, num_outputs: int):
         Genome.lib.CreateGenome(genome, num_inputs, num_outputs)
 
     @staticmethod
-    def load(genome, filename):
+    def load(genome: ctypes.c_void_p, filename: str):
         Genome.lib.LoadGenome(genome, filename.encode('utf-8'))
 
     @staticmethod
-    def save(genome, filename):
+    def save(genome: ctypes.c_void_p, filename: str):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         Genome.lib.SaveGenome(genome, filename.encode('utf-8'))
 
     @staticmethod
-    def mutate(genome):
+    def mutate(genome: ctypes.c_void_p):
         Genome.lib.MutateGenome(genome)
 
     @staticmethod
-    def crossover(genome, other):
+    def crossover(genome: ctypes.c_void_p, other: ctypes.c_void_p):
         Genome.lib.CrossoverGenome(genome, other)
 
     @staticmethod
-    def feed_forward(genome, inputs):
+    def feed_forward(genome: ctypes.c_void_p, inputs):
         return Genome.lib.FeedForwardGenome(genome, inputs)
 
     @staticmethod
-    def set_name(genome, name):
+    def set_name(genome: ctypes.c_void_p, name: str):
         Genome.lib.SetName(genome, name.encode('utf-8'))
 
     @staticmethod
-    def get_name(genome):
+    def get_name(genome: ctypes.c_void_p) -> str:
         return Genome.lib.GetName(genome).decode('utf-8')
 
     @staticmethod
-    def set_fitness(genome, fitness):
+    def set_fitness(genome: ctypes.c_void_p, fitness: float):
         Genome.lib.SetFitness(genome, fitness)
 
     @staticmethod
-    def get_fitness(genome):
+    def get_fitness(genome: ctypes.c_void_p) -> float:
         return Genome.lib.GetFitness(genome)
 
     @staticmethod
-    def print_genome_info(genome):
+    def print_genome_info(genome: ctypes.c_void_p) -> None:
         Genome.lib.PrintGenomeInfo(genome)
+
+    @staticmethod
+    def does_genome_have_connections(genome: ctypes.c_void_p) -> bool:
+        return Genome.lib.DoesGenomeHaveConnections(genome)
+    
+    @staticmethod
+    def print_output_layer_values(genome: ctypes.c_void_p):
+        Genome.lib.PrintOutputLayerValues(genome)

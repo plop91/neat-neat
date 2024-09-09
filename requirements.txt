@@ -1,0 +1,4 @@
+opencv-python
+gym-super-mario-bros
+gymnasium[all]
+gymnasium[classic_control]

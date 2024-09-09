@@ -65,6 +65,19 @@ elitism            = 2
 survival_threshold = 0.2
 */
 
+// make a variable type for the data type
+
+float sigmoid(float x)
+{
+    return 1 / (1 + exp(-x));
+}
+
+class NotImplemented : public std::logic_error
+{
+public:
+    NotImplemented() : std::logic_error("Function not yet implemented") {};
+};
+
 class Node
 {
 private:
@@ -241,6 +254,7 @@ void Node::CalculateValue()
 
     // Calculate value recursively
     value = 0;
+    ready = true;
     for (tuple<Node *, float, bool> conn : *connections)
     {
         if (get<2>(conn))
@@ -252,7 +266,7 @@ void Node::CalculateValue()
             value += get<0>(conn)->value * get<1>(conn);
         }
     }
-    ready = true;
+    value = sigmoid(value);
 }
 
 void Node::Reset()
@@ -311,20 +325,37 @@ public:
     void InitGenome(int numInputs, int numOutputs); // Initialize a genome with a given number of input and output nodes and connections from each output node to the bias node
     void Load(string *filename);                    // Load a genome from a file
     void Save(string *filename);                    // Save a genome to a file
-    void Mutate();                                  // Mutate the genome
     void Crossover(Genome *other);                  // Crossover the genome with another genome
     int FeedForward(float *input_image);            // Feed forward the input image through the genome and return the index of the output node with the highest value
+
+    // Mutate methods
+    void Mutate();                         // Mutate the genome
+    void MutateAdjustConnectionWeight();   // Adjust the weight of a connection in the genome
+    void MutateAddConnection();            // Add a new connection to the genome
+    void MutateAddNode();                  // Add a new node to the genome
+    void MutateEnableConnection();         // Enable a connection in the genome
+    void MutateDisableConnection();        // Disable a connection in the genome
+    void MutateChangeActivationFunction(); // Change the activation function of a node in the genome
 
     // Getters/Setters
     void SetName(string *name) { this->name = name; }           // Set the name of the genome
     string *GetName() { return name; }                          // Get the name of the genome
+    int GetNumNodes() { return numNodes; }                      // Get the number of nodes in the genome
+    int GetNumInputs() { return numInputs; }                    // Get the number of input nodes in the genome
+    int GetNumOutputs() { return numOutputs; }                  // Get the number of output nodes in the genome
+    int GetNumHidden() { return numHidden; }                    // Get the number of hidden nodes in the genome
+    Node *GetNode(int index) { return nodes[index]; }           // Get a node in the genome
     void SetFitness(float fitness) { this->fitness = fitness; } // Set the fitness of the genome
     float GetFitness() { return fitness; }                      // Get the fitness of the genome
     void PrintInfo();                                           // Print the information of the genome
 
     // TODO: move this out of the class and make it a friend function
     Node *FindRandomNodeWithEnabledConnection(); // Find a random node with an enabled connection
+
+    void PrintOutputLayerValues();
 };
+
+bool doesGenomeHaveConnections(Genome *genome);
 
 Genome::Genome(string *name)
 {
@@ -367,7 +398,6 @@ Genome::Genome(Genome *other)
     this->numInputs = other->numInputs;
     this->numOutputs = other->numOutputs;
     this->numHidden = other->numHidden;
-    cout << "numNodes: " << numNodes << " numInputs: " << numInputs << " numOutputs: " << numOutputs << " numHidden: " << numHidden << endl;
 
     this->nodes = new Node *[numNodes];
     for (int i = 0; i < numNodes; i++)
@@ -405,7 +435,6 @@ Genome::Genome(Genome *other)
             throw "Could not find node with id";
         }
         list<tuple<Node *, float, bool>> *connections = current_node->GetConnections();
-        
         for (tuple<Node *, float, bool> conn : *connections)
         {
             int from_id = get<0>(conn)->GetId();
@@ -413,8 +442,6 @@ Genome::Genome(Genome *other)
             float weight = get<1>(conn);
             bool enabled = get<2>(conn);
             this->nodes[i]->AddConnection(from_node, weight, enabled);
-            cout << "Added connection from " << from_id << " to " << i << endl;
-            throw "yay";
         }
     }
 
@@ -549,6 +576,7 @@ void Genome::Load(string *filename)
         Node *from_node = GetNodeWithId(nodes, numNodes, from_id);
         to_node->AddConnection(from_node, weight, enabled);
     }
+
     // Set the inputs, outputs, and hidden nodes
     inputs = new Node *[numInputs];
     for (int i = 0; i < numInputs; i++)
@@ -556,7 +584,7 @@ void Genome::Load(string *filename)
         inputs[i] = GetNodeWithId(nodes, numNodes, input_ids[i]);
         if (inputs[i] == NULL)
         {
-            cout << "Could not find input node with id " << input_ids[i] << endl;
+            cout << "ACould not find input node with id " << input_ids[i] << endl;
             throw "Could not find input node with id";
         }
     }
@@ -569,7 +597,7 @@ void Genome::Load(string *filename)
         outputs[i] = GetNodeWithId(nodes, numNodes, output_ids[i]);
         if (outputs[i] == NULL)
         {
-            cout << "Could not find output node with id " << output_ids[i] << endl;
+            cout << "BCould not find output node with id " << output_ids[i] << endl;
             throw "Could not find output node with id";
         }
     }
@@ -580,7 +608,7 @@ void Genome::Load(string *filename)
         hidden[i] = GetNodeWithId(nodes, numNodes, hidden_ids[i]);
         if (hidden[i] == NULL)
         {
-            cout << "Could not find hidden node with id " << hidden_ids[i] << endl;
+            cout << "CCould not find hidden node with id " << hidden_ids[i] << endl;
             throw "Could not find hidden node with id";
         }
     }
@@ -608,7 +636,6 @@ void Genome::Save(string *filename)
     // first line: numInputs, numHidden, numOutputs
     MyFile << numInputs << " " << numHidden << " " << numOutputs << endl;
 
-    // Note: node[0] is always the bias node
     // second line: input node ids
     for (int i = 0; i < numInputs; i++)
     {
@@ -640,16 +667,19 @@ void Genome::Save(string *filename)
         {
             MyFile << 1.17549e-38;
         }
+        else if (nodes[i]->GetValue() == NAN)
+        {
+            cout << "Saving Node " << i << " but the value is NAN" << endl;
+            throw "Saving Node but the value is NAN";
+        }
         else
         {
             MyFile << nodes[i]->GetValue();
         }
         MyFile << " " << conns->size() << " ";
 
-        for (int i = 0; i < conns->size(); i++)
+        for (tuple<Node *, float, bool> conn : *conns)
         {
-            tuple<Node *, float, bool> conn = conns->front();
-            conns->pop_front();
             MyFile << get<0>(conn)->GetId() << " " << get<1>(conn) << " " << get<2>(conn) << " ";
         }
         MyFile << endl;
@@ -660,8 +690,6 @@ void Genome::Save(string *filename)
 
 Node *Genome::FindRandomNodeWithEnabledConnection()
 {
-
-    // TODO: optimize this function, it is currently O(n) and could be O(1) with a hash map
     if (numNodes == 0)
     {
         cout << "No nodes in genome, cannot FindRandomNodeWithEnabledConnection" << endl;
@@ -714,177 +742,296 @@ void Genome::Mutate()
      * - mutation 3: add a new node (10%)
      * - mutation 4: disable a connection (10%)
      * - mutation 5: enable a connection (10%)
-     * - mutation 6: change an activation function (10%)
+     * - mutation 6: change an activation function (10%) DISABLED
      */
 
     // cout << "Genome mutating" << endl;
 
     // float mutation = pos_uniform_distribution(generator);
-    int mutation = rand() % 10;
-    cout << "Mutation: " << mutation << endl;
+    int mutation = rand() % 9;
+    // cout << "Mutation: " << mutation << endl;
     if (mutation < 5)
     {
         // mutation 1: adjust the weight of a connection
-        cout << "Genome mutation 1: adjust the weight of a connection" << endl;
-        Node *random_node = FindRandomNodeWithEnabledConnection();
-        if (random_node == NULL)
-        {
-            cout << "No enabled connections in genome, cannot mutate" << endl;
-            return;
-        }
-        while (true)
-        {
-            list<tuple<Node *, float, bool>> *connections = random_node->GetConnections();
-            int random_connection_index = rand() % connections->size();
-            std::list<tuple<Node *, float, bool>>::iterator it = connections->begin();
-            advance(it, random_connection_index);
-            tuple<Node *, float, bool> random_connection = *it;
-            connections->erase(it);
-            Node *from_node = get<0>(random_connection);
-            float weight = get<1>(random_connection);
-            bool enabled = get<2>(random_connection);
-            if (!enabled)
-            {
-                continue;
-            }
-            weight += pos_uniform_distribution(generator);
-            connections->push_back(make_tuple(from_node, weight, enabled));
-            return;
-        }
+        MutateAdjustConnectionWeight();
     }
     else if (mutation < 6)
     {
-        // mutation 2: add a new connection
-        cout << "Genome mutation 2: add a new connection" << endl;
-        // first, get start node from input, hidden, or bias
-        int random_node_index = rand() % (numInputs + numHidden + 1);
-        Node *start_node;
-        if (random_node_index < numInputs)
+        try
         {
-            start_node = inputs[random_node_index];
+            // mutation 2: add a new connection
+            MutateAddConnection();
         }
-        else if (random_node_index < numInputs + numHidden)
+        catch (const NotImplemented &e)
         {
-            start_node = hidden[random_node_index - numInputs];
+            // cout << "\t\t^ not implemented, defaulting to adjusting connection" << endl;
+            MutateAdjustConnectionWeight();
         }
-        else
-        {
-            start_node = bias;
-        }
-
-        // second, get end node from hidden or output
-        random_node_index = rand() % (numHidden + numOutputs);
-        Node *end_node;
-        if (random_node_index < numHidden)
-        {
-            end_node = hidden[random_node_index];
-        }
-        else
-        {
-            end_node = outputs[random_node_index - numHidden];
-        }
-
-        // third, check that the connection does not already exist
-        bool connection_exists = false;
-        list<tuple<Node *, float, bool>> *connections = end_node->GetConnections();
-        for (tuple<Node *, float, bool> conn : *connections)
-        {
-            if (get<0>(conn) == start_node)
-            {
-                connection_exists = true;
-                break;
-            }
-        }
-        if (connection_exists)
-        {
-            cout << "Connection already exists, cannot add new connection" << endl;
-            return;
-        }
-
-        // fourth, check that the connection does not create a cycle
-        // TODO: implement cycle detection
-
-        // fifth, add the new connection
-        end_node->AddConnection(start_node, neg_uniform_distribution(generator), true);
     }
     else if (mutation < 7)
     {
-        // mutation 3: add a new node
-        cout << "Genome mutation 3: add a new node" << endl;
-        // first, get a random connection
-        Node *random_node = FindRandomNodeWithEnabledConnection();
-        list<tuple<Node *, float, bool>> *connections = random_node->GetConnections();
-        int random_connection_index = rand() % connections->size();
-        std::list<tuple<Node *, float, bool>>::iterator it = connections->begin();
-        advance(it, random_connection_index);
-        tuple<Node *, float, bool> random_connection = *it;
-
-        // second, disable the connection
-
-        // third, create a new node
-
-        // fourth, create a new connection from the start node to the new node
-
-        // fifth, create a new connection from the new node to the end node
+        try
+        {
+            // mutation 3: add a new node
+            MutateAddNode();
+        }
+        catch (const NotImplemented &e)
+        {
+            // cout << "\t\t^ not implemented, defaulting to adjusting connections" << endl;
+            MutateAdjustConnectionWeight();
+        }
     }
     else if (mutation < 8)
     {
-        // mutation 4: disable a connection
-        cout << "Genome mutation 4: disable a connection" << endl;
+        try
+        {
+            // mutation 4: disable a connection
+            MutateDisableConnection();
+        }
+        catch (const NotImplemented &e)
+        {
+            // cout << "\t\t^ not implemented, defaulting to adjusting connection" << endl;
+            MutateAdjustConnectionWeight();
+        }
+    }
+    // else if (mutation < 9)
+    else
+    {
+        try
+        {
+            // mutation 5: enable a connection
+            MutateEnableConnection();
+        }
+        catch (const NotImplemented &e)
+        {
+            // cout << "\t\t^ not implemented, defaulting to adjusting connection" << endl;
+            MutateAdjustConnectionWeight();
+        }
+    }
+    // else
+    // {
+    //     try
+    //     {
+    //         // mutation 6: change an activation function
+    //         MutateChangeActivationFunction();
+    //     }
+    //     catch (const NotImplemented &e)
+    //     {
+    //         cout << "\t\t^ not implemented, defaulting to adjusting connection" << endl;
+    //         MutateAdjustConnectionWeight();
+    //     }
+    // }
+}
 
-        // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
-
-        // first, get a random connection
-
-        // second, if the connection is already disabled, get a new connection
-
-        // third, check that the connection is not the only active connection left in the genome
-
-        // fourth, disable the connection
-
-        Node *random_node = FindRandomNodeWithEnabledConnection();
+void Genome::MutateAdjustConnectionWeight()
+{
+    // cout << "Genome mutation 1: adjust the weight of a connection" << endl;
+    Node *random_node = FindRandomNodeWithEnabledConnection();
+    if (random_node == NULL)
+    {
+        cout << "No enabled connections in genome, cannot mutate" << endl;
+        return;
+    }
+    while (true)
+    {
         list<tuple<Node *, float, bool>> *connections = random_node->GetConnections();
         int random_connection_index = rand() % connections->size();
         std::list<tuple<Node *, float, bool>>::iterator it = connections->begin();
         advance(it, random_connection_index);
         tuple<Node *, float, bool> random_connection = *it;
+        connections->erase(it);
         Node *from_node = get<0>(random_connection);
         float weight = get<1>(random_connection);
-        connections->erase(it);
-        connections->push_back(make_tuple(from_node, weight, false));
+        bool enabled = get<2>(random_connection);
+        if (!enabled)
+        {
+            continue;
+        }
+        weight += pos_uniform_distribution(generator);
+        // check that the weight is within the bounds
+        if (weight > 1.0)
+        {
+            weight = 1.0;
+        }
+        else if (weight < -1.0)
+        {
+            weight = -1.0;
+        }
+        connections->push_back(make_tuple(from_node, weight, enabled));
+        return;
     }
-    else if (mutation < 9)
+}
+
+void Genome::MutateAddConnection()
+{
+    // cout << "Genome mutation 2: add a new connection" << endl;
+    // first, get start node from input, hidden, or bias
+    int random_node_index = rand() % (numInputs + numHidden + 1);
+    Node *start_node;
+    if (random_node_index < numInputs)
     {
-        // mutation 5: enable a connection
-        cout << "Genome mutation 5: enable a connection" << endl;
-
-        // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
-
-        // first, get a random connection
-
-        // second, if the connection is already enabled, get a new connection
-
-        // third, check that enabling the connection does not create a cycle
-
-        // fourth, enable the connection
-
-        cout << "Genome mutation 5: enable a connection not implemented" << endl;
+        start_node = inputs[random_node_index];
+    }
+    else if (random_node_index < numInputs + numHidden)
+    {
+        start_node = hidden[random_node_index - numInputs];
     }
     else
     {
-        // mutation 6: change an activation function
-        cout << "Genome mutation 6: change an activation function" << endl;
-
-        // first, get a random node from hidden nodes
-
-        // second, choose a new activation function
-
-        // third, check that the node does not already use the activation function
-
-        // fourth, change the activation function
-
-        cout << "Genome mutation 6: change an activation function not implemented" << endl;
+        start_node = bias;
     }
+
+    // second, get end node from hidden or output
+    random_node_index = rand() % (numHidden + numOutputs);
+    Node *end_node;
+    if (random_node_index < numHidden)
+    {
+        end_node = hidden[random_node_index];
+    }
+    else
+    {
+        end_node = outputs[random_node_index - numHidden];
+    }
+
+    // third, check that the connection does not already exist
+    bool connection_exists = false;
+    list<tuple<Node *, float, bool>> *connections = end_node->GetConnections();
+    for (tuple<Node *, float, bool> conn : *connections)
+    {
+        if (get<0>(conn) == start_node)
+        {
+            connection_exists = true;
+            break;
+        }
+    }
+    if (connection_exists)
+    {
+        cout << "Connection already exists, cannot add new connection" << endl;
+        return;
+    }
+
+    // fourth, check that the connection does not create a cycle
+    // TODO: implement cycle detection
+
+    // fifth, add the new connection
+    end_node->AddConnection(start_node, neg_uniform_distribution(generator), true);
+}
+
+void Genome::MutateAddNode()
+{
+    // cout << "Genome mutation 3: add a new node" << endl;
+
+    // first, get a random connection
+    Node *random_node = FindRandomNodeWithEnabledConnection();
+    list<tuple<Node *, float, bool>> *connections = random_node->GetConnections();
+    int random_connection_index = rand() % connections->size();
+    std::list<tuple<Node *, float, bool>>::iterator it = connections->begin();
+    advance(it, random_connection_index);
+    tuple<Node *, float, bool> random_connection = *it;
+    Node *from_node = get<0>(random_connection);
+    float weight = get<1>(random_connection);
+    connections->erase(it);
+
+    // second, disable the connection
+    connections->push_back(make_tuple(from_node, weight, false));
+
+    // third, create a new node
+    
+    // extend the nodes array
+    Node **new_nodes = new Node *[numNodes + 1];
+    for (int i = 0; i < numNodes; i++)
+    {
+        new_nodes[i] = nodes[i];
+    }
+    // add the new node
+    new_nodes[numNodes] = new Node(numNodes, -INFINITY);
+    delete[] nodes;
+    nodes = new_nodes;
+
+    // extend the hidden nodes array
+    Node **new_hidden = new Node *[numHidden + 1];
+    for (int i = 0; i < numHidden; i++)
+    {
+        new_hidden[i] = hidden[i];
+    }
+    new_hidden[numHidden] = nodes[numNodes];
+    if (numHidden > 0)
+    {
+        delete[] hidden;
+    }
+    hidden = new_hidden;
+
+    // fourth, create a new connection from the start node to the new node
+    float new_weight = neg_uniform_distribution(generator);
+    nodes[numNodes]->AddConnection(from_node, new_weight, true);
+
+    // fifth, create a new connection from the new node to the end node
+    new_weight = neg_uniform_distribution(generator);
+    random_node->AddConnection(nodes[numNodes], new_weight, true);
+
+    numNodes++;
+    numHidden++;
+}
+
+void Genome::MutateEnableConnection()
+{
+
+    // cout << "Genome mutation 5: enable a connection" << endl;
+
+    // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
+
+    // first, get a random connection
+
+    // second, if the connection is already enabled, get a new connection
+
+    // third, check that enabling the connection does not create a cycle
+
+    // fourth, enable the connection
+
+    throw NotImplemented();
+}
+
+void Genome::MutateDisableConnection()
+{
+    // cout << "Genome mutation: disable a connection" << endl;
+
+    // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
+
+    // first, get a random connection
+
+    // second, if the connection is already disabled, get a new connection
+
+    // third, check that the connection is not the only active connection left in the genome
+
+    // fourth, disable the connection
+
+    // Node *random_node = FindRandomNodeWithEnabledConnection();
+    // list<tuple<Node *, float, bool>> *connections = random_node->GetConnections();
+    // int random_connection_index = rand() % connections->size();
+    // std::list<tuple<Node *, float, bool>>::iterator it = connections->begin();
+    // advance(it, random_connection_index);
+    // tuple<Node *, float, bool> random_connection = *it;
+    // Node *from_node = get<0>(random_connection);
+    // float weight = get<1>(random_connection);
+    // connections->erase(it);
+    // connections->push_back(make_tuple(from_node, weight, false));
+
+    throw NotImplemented();
+}
+
+void Genome::MutateChangeActivationFunction()
+{
+    // cout << "Genome mutation 6: change an activation function" << endl;
+
+    // first, get a random node from hidden nodes
+
+    // second, choose a new activation function
+
+    // third, check that the node does not already use the activation function
+
+    // fourth, change the activation function
+
+    throw NotImplemented();
 }
 
 void Genome::Crossover(Genome *other)
@@ -923,8 +1070,8 @@ int Genome::FeedForward(float *input_image)
         outputs[i]->CalculateValue();
     }
     // Find the output node with the highest value
-    int max_index = 0;
-    float max_value = -INFINITY;
+    int max_index = 0;           // Index of the output node with the highest value
+    float max_value = -INFINITY; // Value of the output node with the highest value
     for (int i = 0; i < numOutputs; i++)
     {
         if (outputs[i]->GetValue() > max_value)
@@ -950,6 +1097,29 @@ void Genome::PrintInfo()
     cout << "Genome numHidden: " << numHidden << endl;
 }
 
+// DEBUG
+bool doesGenomeHaveConnections(Genome *genome)
+{
+    for (int i = 0; i < genome->GetNumNodes(); i++)
+    {
+        list<tuple<Node *, float, bool>> *connections = genome->GetNode(i)->GetConnections();
+        if (connections->size() > 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Genome::PrintOutputLayerValues()
+{
+    for (int i = 0; i < numOutputs; i++)
+    {
+        cout << "Output " << i << " value: " << outputs[i]->GetValue() << endl;
+    }
+}
+
+// Expose the Genome class to C
 extern "C"
 {
     Genome *InitGenome(char *name)
@@ -1075,7 +1245,6 @@ extern "C"
          */
         return genome->GetName()->c_str();
     }
-
     void SetFitness(Genome *genome, float fitness)
     {
         /**
@@ -1096,5 +1265,27 @@ extern "C"
          * @return: Fitness of the genome
          */
         return genome->GetFitness();
+    }
+
+    // DEBUG
+    bool DoesGenomeHaveConnections(Genome *genome)
+    {
+        /**
+         * Check if the genome has any connections.
+         *
+         * @param genome: Pointer to the genome to check
+         *
+         * @return: True if the genome has any connections, False otherwise
+         */
+        return doesGenomeHaveConnections(genome);
+    }
+    void PrintOutputLayerValues(Genome *genome)
+    {
+        /**
+         * Print the values of the output layer of the genome.
+         *
+         * @param genome: Pointer to the genome to print the output layer values of
+         */
+        genome->PrintOutputLayerValues();
     }
 }

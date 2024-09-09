@@ -7,6 +7,7 @@ import numpy as np
 from genome import *
 from utils import *
 
+from tqdm import tqdm
 import os
 import shutil
 import time
@@ -17,7 +18,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def process_image(img):
+def process_image(img: np.ndarray):
     img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     img = cv2.resize(img, (32, 32))
     img = img.flatten()
@@ -27,14 +28,14 @@ def process_image(img):
 
 class Neat:
 
-    def __init__(self, name, max_population=100, gui=False, use_mp=False):
+    def __init__(self, name: str, max_population: int = 100, gui: bool = False, use_mp: bool = False):
         self.name = name
         self.max_population = max_population  # Number of genomes in the population
         # self.population = []  # List of genomes
         self.gui = gui
         self.use_mp = use_mp
 
-    def create_population(self, input_size, output_size):
+    def create_population(self, input_size: int, output_size: int) -> None:
         for i in range(self.max_population):
             genome = Genome.init_genome(f"initial genome: {i}")
             Genome.create_genome(genome, input_size, output_size)
@@ -42,30 +43,57 @@ class Neat:
                 genome, f'./genomes/{self.name}/Checkpoint0/genome_{i}.txt')
         # TODO: Save information about the population
 
-    def evolve(self, generations=100):
+    def evolve(self, generations: int = 100) -> None:
         print('Evolving population...')
-        generation = 0
+
+        generation = 0  # Current generation
+
+        # While the number of generations is less than the maximum number of generations
         while generation < generations:
+
+            # Evaluate the population
             results = self.evaluate(generation)
+
+            # Sort the results by fitness
             results.sort(key=lambda x: x[1], reverse=True)
 
+            # Get the fittest genome
             fittest_result = results[0]
 
             print(
                 f"Generation {generation} Fittest genome {fittest_result[0]} scored: {fittest_result[1]}")
 
+            # Load the fittest genome
             fittest_genome = Genome.init_genome(f"Fittest Genome {generation}")
-            Genome.load(fittest_genome, f'./genomes/{self.name}/Checkpoint{generation}/genome_{fittest_result[0]}.txt')
+            Genome.load(
+                fittest_genome, f'./genomes/{self.name}/Checkpoint{generation}/genome_{fittest_result[0]}.txt')
 
-            os.makedirs(f'./genomes/{self.name}/Checkpoint{generation+1}', exist_ok=True)
+            # Check if the fittest genome has connections, if not its a problem
+            if not Genome.does_genome_have_connections(fittest_genome):
+                raise Exception(
+                    'Fittest genome has no connections!! Aborting...')
 
+            # Create a directory for the next generation
+            os.makedirs(
+                f'./genomes/{self.name}/Checkpoint{generation+1}', exist_ok=True)
+
+            # Save the fittest genome as the first genome of the next generation
             Genome.save(fittest_genome,
-                f'./genomes/{self.name}/Checkpoint{generation+1}/genome_0.txt')
+                        f'./genomes/{self.name}/Checkpoint{generation+1}/genome_0.txt')
 
+            # Create the next generation
             for i in range(1, self.max_population):
-                new_genome = Genome.copy(fittest_genome, f"Mutant of Fittest Genome {generation}")
+                # Copy the fittest genome
+                new_genome = Genome.copy(
+                    fittest_genome, f"Mutant of Fittest Genome {generation}")
+
+                # TODO: implement crossover
+                # new_genome = Genome.crossover(fittest_genome, second_fittest_genome)
                 Genome.mutate(new_genome)
-                Genome.save(new_genome, f'./genomes/{self.name}/Checkpoint{generation+1}/genome_{i}.txt')
+
+                # Save the new genome
+                Genome.save(
+                    new_genome, f'./genomes/{self.name}/Checkpoint{generation+1}/genome_{i}.txt')
 
             generation += 1
 
@@ -74,66 +102,86 @@ class Neat:
         results = []
         if self.use_mp:
             print('Using multiprocessing')
-            with mp.Pool(mp.cpu_count()/2) as pool:
-                results = pool.starmap(self.evaluate_genome, [(generation, i)
-                                                              for i in range(self.max_population)])
+            with mp.Pool(int(mp.cpu_count()/2)) as pool:
+                genome_combos = [(generation, i) for i in range(self.max_population)]
+                results = pool.starmap(self.evaluate_genome, genome_combos)
         else:
             for i in range(self.max_population):
-                results.append((i, self.evaluate_genome(generation, i)))
+                results.append(self.evaluate_genome(generation, i))
         print(f'Evaluation of generation {generation} completed')
         print(f"Results: {results}")
         return results
 
-    def evaluate_genome(self, generation, genome_index):
-        print(f'Generation {generation} Genome {genome_index} Evaluating')
+    def evaluate_genome(self, generation_index: int, genome_index: int):
+        # print(f'Generation {generation_index} Genome {genome_index} Evaluating')
+
+        window_name = f'SuperMarioBros AI:{self.name} Generation:{generation_index} Genome:{genome_index}'
+        genome_name = f'Generation {generation_index} Genome {genome_index}'
+        genome_path = f'./genomes/{self.name}/Checkpoint{generation_index}/genome_{genome_index}.txt'
 
         env = gym_super_mario_bros.make(
             'SuperMarioBros-1-1-v0', render_mode='rgb_array', apply_api_compatibility=True)
         env = JoypadSpace(env, COMPLEX_MOVEMENT)
         env = SkipFrame(env, skip=4)
 
-        genome = Genome.init_genome(f"Generation {generation} Genome {genome_index}")
-        Genome.load(genome, f'./genomes/{self.name}/Checkpoint{generation}/genome_{genome_index}.txt')
+        genome = Genome.init_genome(genome_name)
+        Genome.load(genome, genome_path)
 
-        print(f'Generation {generation} Genome {genome_index} loaded')
-        # Genome.print_genome_info(genome)
+        # print(f'Generation {generation_index} Genome {genome_index} loaded')
 
         last_state = np.zeros((32, 32, 3), dtype=np.uint8)
         env.reset()
         score = 0
+        no_move_count = 0
+        last_x_pos = 0
+        last_y_pos = 0
+        i = 0
         while True:
             c_floats = process_image(last_state)
             action = Genome.feed_forward(genome, c_floats)
             next_state, reward, done, trunc, info = env.step(action)
-            # TODO: log the position of the agent and if it hasn't moved in the last x frames then break and give it a huge negative reward
+
+            if info['x_pos'] == last_x_pos and info['y_pos'] == last_y_pos:
+                no_move_count += 1
+            else:
+                no_move_count = 0
+                last_x_pos = info['x_pos']
+                last_y_pos = info['y_pos']
+
+            if no_move_count > 200:
+                score -= 1000
+                trunc = True
+                print('No movement detected')
+
             if self.gui:
                 frame = cv2.cvtColor(next_state, cv2.COLOR_RGB2BGR)
-                cv2.imshow(f'SuperMarioBros-1-1=G{generation}-{genome_index}', frame)
+                cv2.imshow(window_name, frame)
                 cv2.waitKey(1)
             score += reward
             if done or trunc:
+                if done:
+                    score += 1000
                 break
             last_state = next_state
 
         Genome.set_fitness(genome, score)
         print(
-            f'Generation {generation} Genome {genome_index} fitness: {Genome.get_fitness(genome)}')
+            f'Generation {generation_index} Genome {genome_index} fitness: {Genome.get_fitness(genome)}')
 
         # shut down the environment
 
         if self.gui:
-            cv2.destroyWindow(f'SuperMarioBros-1-1=G{generation}-{genome_index}')
+            cv2.destroyWindow(window_name)
 
         env.close()
 
         # save and delete the genome
-        Genome.save(genome,
-            f'./genomes/{self.name}/Checkpoint{generation}/genome_{genome_index}.txt')
+        Genome.save(genome, genome_path)
         Genome.delete_genome(genome)
 
-        return (genome, score)
+        return (genome_index, score)
 
-    def save(self, path: str):
+    def save(self, path: str) -> None:
         # first create a directory to save the population
         if not os.path.exists(path):
             os.makedirs(path)
@@ -155,7 +203,7 @@ class Neat:
         # remove the directory
         # shutil.rmtree(path)
 
-    def load(self, filename):
+    def load(self, filename: str) -> None:
         # unzip the file and extract the files to a directory
         # shutil.unpack_archive(filename + ".zip", filename)
 
@@ -235,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_population', type=int, default=4,
                         help='Number of genomes in the population')
     parser.add_argument('--generations', type=int,
-                        default=10, help='Number of generations')
+                        default=4, help='Number of generations')
 
     args = parser.parse_args()
 
