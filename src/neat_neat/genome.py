@@ -42,7 +42,7 @@ class Genome:
 
     # Crossover Genome
     lib.CrossoverGenome.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    lib.CrossoverGenome.restype = None
+    lib.CrossoverGenome.restype = ctypes.c_void_p
 
     # Feed Forward Genome
     lib.FeedForwardGenome.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
@@ -137,7 +137,7 @@ class Genome:
     @staticmethod
     def does_genome_have_connections(genome: ctypes.c_void_p) -> bool:
         return Genome.lib.DoesGenomeHaveConnections(genome)
-    
+
     @staticmethod
     def print_output_layer_values(genome: ctypes.c_void_p):
         Genome.lib.PrintOutputLayerValues(genome)

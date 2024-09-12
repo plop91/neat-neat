@@ -115,7 +115,6 @@ Node *GetNodeWithId(Node **nodes, int numNodes, int id)
      * Helper function to get a node with a specific id from an array of nodes.
      *
      * @param nodes: Array of nodes
-     * @param numNodes: Number of nodes in the array
      * @param id: Id of the node to get
      *
      * @return: Node with the specified id, or NULL if the node is not found
@@ -214,7 +213,7 @@ void Node::LoadValue(float value)
      *
      * @param value: Value to load into the node
      */
-    this->value = value;
+    this->value = value / 255; // Normalize the value to be between 0 and 1 by dividing by 255
     ready = true;
 }
 
@@ -325,7 +324,7 @@ public:
     void InitGenome(int numInputs, int numOutputs); // Initialize a genome with a given number of input and output nodes and connections from each output node to the bias node
     void Load(string *filename);                    // Load a genome from a file
     void Save(string *filename);                    // Save a genome to a file
-    void Crossover(Genome *other);                  // Crossover the genome with another genome
+    Genome *Crossover(Genome *other);               // Crossover the genome with another genome
     int FeedForward(float *input_image);            // Feed forward the input image through the genome and return the index of the output node with the highest value
 
     // Mutate methods
@@ -936,7 +935,7 @@ void Genome::MutateAddNode()
     connections->push_back(make_tuple(from_node, weight, false));
 
     // third, create a new node
-    
+
     // extend the nodes array
     Node **new_nodes = new Node *[numNodes + 1];
     for (int i = 0; i < numNodes; i++)
@@ -975,10 +974,9 @@ void Genome::MutateAddNode()
 
 void Genome::MutateEnableConnection()
 {
+    // TODO: implement this mutation
 
     // cout << "Genome mutation 5: enable a connection" << endl;
-
-    // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
 
     // first, get a random connection
 
@@ -993,9 +991,9 @@ void Genome::MutateEnableConnection()
 
 void Genome::MutateDisableConnection()
 {
-    // cout << "Genome mutation: disable a connection" << endl;
+    // TODO: implement this mutation
 
-    // TODO: this may require a concerted search to find all active connections and then disable one rather than a random search
+    // cout << "Genome mutation: disable a connection" << endl;
 
     // first, get a random connection
 
@@ -1021,6 +1019,8 @@ void Genome::MutateDisableConnection()
 
 void Genome::MutateChangeActivationFunction()
 {
+    // TODO: implement this mutation
+
     // cout << "Genome mutation 6: change an activation function" << endl;
 
     // first, get a random node from hidden nodes
@@ -1034,15 +1034,55 @@ void Genome::MutateChangeActivationFunction()
     throw NotImplemented();
 }
 
-void Genome::Crossover(Genome *other)
+Genome *Genome::Crossover(Genome *other)
 {
     /**
-     * Crossover the genome with another genome.
+     * Crossover this genome with another genome.
      *
      * TODO: implement crossover algorithm
      *
      * @param other: Genome to crossover with
      */
+
+    Genome *child = new Genome(this->name);
+
+    // get the shape of the new genome
+    child->numInputs = numInputs;
+    child->numOutputs = numOutputs;
+    child->numHidden = max(numHidden, other->numHidden);
+    child->numNodes = child->numInputs + child->numOutputs + child->numHidden + 1;
+
+    // crossover process:
+    // 1. find the matching genes(nodes) between the two genomes
+    for (int i = 0; i < max(numNodes, other->numNodes); i++)
+    {
+        Node *a = GetNodeWithId(nodes, numNodes, i);
+        Node *b = GetNodeWithId(other->nodes, other->numNodes, i);
+
+        if (a == NULL && b == NULL)
+        {
+            cout << "Both nodes are NULL, this should not be possible" << endl;
+            throw "Both nodes are NULL";
+        }
+        else if (a == NULL)
+        {
+            // use node b
+        }
+        else if (b == NULL)
+        {
+            // use node a
+        }
+        else
+        {
+            // both nodes exist
+
+            // check if the nodes are matching i.e. have the same connections
+        }
+    }
+
+    // 2. for each matching gene, randomly choose the gene from one of the parents
+    // 3. for each disjoint gene, add the gene from the fittest parent
+    // 4. for each excess gene, add the gene from the fittest parent
 
     throw "Not implemented";
 }
@@ -1193,7 +1233,7 @@ extern "C"
          */
         genome->Mutate();
     }
-    void CrossoverGenome(Genome *genome, Genome *other)
+    Genome *CrossoverGenome(Genome *genome, Genome *other)
     {
         /**
          * Crossover the genome with another genome.
@@ -1201,7 +1241,9 @@ extern "C"
          * @param genome: Pointer to the genome to crossover
          * @param other: Pointer to the other genome to crossover with
          */
-        genome->Crossover(other);
+        //  TODO: implement crossover algorithm
+        // return genome->Crossover(other);
+        return new Genome(genome);
     }
     int FeedForwardGenome(Genome *genome, float *input_image)
     {
